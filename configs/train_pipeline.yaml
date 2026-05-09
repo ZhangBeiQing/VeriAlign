@@ -1,0 +1,61 @@
+model:
+  path: /root/autodl-tmp/Qwen3.5-4B
+  use_4bit: true
+  attn_implementation: sdpa
+
+data:
+  path: reward_seed.json
+
+output:
+  sft_dir: /root/autodl-tmp/UniAlign-sft-lora
+  dpo_dir: /root/autodl-tmp/UniAlign-dpo-lora
+
+sft:
+  target: chosen
+  max_length: 1024
+  epochs: 15.0
+  max_steps: -1
+  learning_rate: 2.0e-5
+  batch_size: 1
+  grad_accum: 8
+  logging_steps: 5
+  save_steps: 20
+  seed: 42
+  lora:
+    r: 32
+    alpha: 64
+    dropout: 0.05
+
+dpo:
+  max_length: 2048
+  epochs: 5.0
+  max_steps: -1
+  learning_rate: 1.0e-5
+  beta: 0.3
+  batch_size: 1
+  grad_accum: 8
+  logging_steps: 5
+  save_steps: 20
+  seed: 42
+
+lora:
+  target_modules:
+    - q_proj
+    - k_proj
+    - v_proj
+    - o_proj
+    - gate_proj
+    - up_proj
+    - down_proj
+
+wandb:
+  enabled: true
+  project: unialign
+  entity: null
+  mode: online
+  group: qwen35-sft-dpo-pipeline
+  report_model: false
+
+runtime:
+  fla_tilelang: "0"
+  triton_f32_default: ieee
