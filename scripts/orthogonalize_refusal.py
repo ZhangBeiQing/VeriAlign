@@ -55,12 +55,12 @@ def orthogonalize_qwen_weights(model, direction: torch.Tensor):
             raise NotImplementedError("Cannot resolve attention output projection.")
 
         attn_out.weight.data = orthogonalize_matrix(
-            attn_out.weight.data.float(), direction
-        ).to(attn_out.weight.dtype)
+            attn_out.weight.data.T.float(), direction
+        ).T.to(attn_out.weight.dtype)
 
         block.mlp.down_proj.weight.data = orthogonalize_matrix(
-            block.mlp.down_proj.weight.data.float(), direction
-        ).to(block.mlp.down_proj.weight.dtype)
+            block.mlp.down_proj.weight.data.T.float(), direction
+        ).T.to(block.mlp.down_proj.weight.dtype)
 
     print(f"  layer {total}/{total} done")
 
