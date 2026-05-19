@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 import yaml
 
 import torch
+import torch.nn.functional as F
 from datasets import Dataset
 from peft import LoraConfig, PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -220,6 +221,86 @@ def load_dpo_dataset(data_path: str | Path, tokenizer: AutoTokenizer) -> Dataset
         raise ValueError(f"{path} does not contain any training examples with chosen+rejected")
     DATA_LOGGER.info("Loaded %d DPO preference pairs (skipped=%d) from %s", len(examples), skipped, path)
     return Dataset.from_list(examples)
+
+
+def _chunked_cross_entropy(
+    hidden: torch.Tensor,
+    lm_weight: torch.Tensor,
+    labels: torch.Tensor,
+    chunk_size: int = 16384,
+    seq_chunk: int = 2048,
+) -> torch.Tensor:
+    total_loss = 0.0
+    total_n = 0
+    h_f32 = hidden.float()
+    V = lm_weight.size(0)
+    device = hidden.device
+
+    for t_start in range(0, hidden.size(0), seq_chunk):
+        t_end = min(t_start + seq_chunk, hidden.size(0))
+        h = h_f32[t_start:t_end]
+        l = labels[t_start:t_end]
+        n = h.size(0)
+
+        max_logits = torch.full((n,), -float("inf"), device=device, dtype=torch.float)
+        sum_exp = torch.zeros(n, device=device, dtype=torch.float)
+        correct_logits = torch.zeros(n, device=device, dtype=torch.float)
+
+        for s in range(0, V, chunk_size):
+            e = min(s + chunk_size, V)
+            w = lm_weight[s:e].float()
+            logits = F.linear(h, w)
+            chunk_max = logits.max(dim=-1).values
+            new_max = torch.maximum(max_logits, chunk_max)
+
+            sum_exp = sum_exp * torch.exp(max_logits - new_max) + \
+                      torch.exp(logits - new_max.unsqueeze(-1)).sum(dim=-1)
+            max_logits = new_max
+
+            local_labels = l - s
+            in_chunk = (local_labels >= 0) & (local_labels < (e - s))
+            if in_chunk.any():
+                correct_logits[in_chunk] = logits[in_chunk, local_labels[in_chunk]]
+
+            del logits, w
+
+        log_probs = correct_logits - max_logits - torch.log(sum_exp + 1e-10)
+        total_loss += -log_probs.sum()
+        total_n += n
+        del max_logits, sum_exp, correct_logits, h
+
+    return total_loss / max(total_n, 1)
+
+
+class ChunkedSFTTrainer(SFTTrainer):
+
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        labels = inputs.pop("labels", None)
+        if labels is None:
+            return super().compute_loss(model, inputs, return_outputs, num_items_in_batch)
+
+        transformer = model.model.model
+        outputs = transformer(**inputs, use_cache=False)
+        hidden = outputs[0].contiguous()
+
+        shift_hidden = hidden[..., :-1, :].contiguous()
+        shift_labels = labels[..., 1:].contiguous()
+
+        shift_hidden = shift_hidden.view(-1, shift_hidden.size(-1))
+        shift_labels = shift_labels.view(-1)
+
+        active = shift_labels != -100
+        if active.sum() == 0:
+            return (torch.tensor(0.0, device=hidden.device, requires_grad=True), outputs) \
+                if return_outputs else torch.tensor(0.0, device=hidden.device, requires_grad=True)
+
+        active_hidden = shift_hidden[active]
+        active_labels = shift_labels[active]
+
+        lm_weight = model.get_output_embeddings().weight
+        loss = _chunked_cross_entropy(active_hidden, lm_weight, active_labels)
+
+        return (loss, outputs) if return_outputs else loss
 
 
 def run_sft_phase(args: argparse.Namespace, tokenizer: AutoTokenizer) -> None:
