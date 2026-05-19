@@ -165,11 +165,12 @@ def load_sft_dataset(data_path: str | Path, tokenizer: AutoTokenizer, target: st
     with path.open("r", encoding="utf-8") as f:
         rows = json.load(f)
 
+    skipped = 0
     examples: list[dict[str, str]] = []
     for idx, row in enumerate(rows):
-        missing = {"instruction", target} - set(row)
-        if missing:
-            raise ValueError(f"{path}:{idx} missing required keys: {sorted(missing)}")
+        if not row.get("instruction") or not row.get(target):
+            skipped += 1
+            continue
 
         messages = [
             {"role": "user", "content": row["instruction"].strip()},
@@ -184,7 +185,7 @@ def load_sft_dataset(data_path: str | Path, tokenizer: AutoTokenizer, target: st
 
     if not examples:
         raise ValueError(f"{path} does not contain any training examples")
-    DATA_LOGGER.info("Loaded %d SFT examples (target=%s) from %s", len(examples), target, path)
+    DATA_LOGGER.info("Loaded %d SFT examples (target=%s, skipped=%d) from %s", len(examples), target, skipped, path)
     return Dataset.from_list(examples)
 
 
@@ -193,11 +194,12 @@ def load_dpo_dataset(data_path: str | Path, tokenizer: AutoTokenizer) -> Dataset
     with path.open("r", encoding="utf-8") as f:
         rows = json.load(f)
 
+    skipped = 0
     examples: list[dict[str, str]] = []
     for idx, row in enumerate(rows):
-        missing = {"instruction", "chosen", "rejected"} - set(row)
-        if missing:
-            raise ValueError(f"{path}:{idx} missing required keys: {sorted(missing)}")
+        if not (row.get("instruction") and row.get("chosen") and row.get("rejected")):
+            skipped += 1
+            continue
 
         messages = [{"role": "user", "content": row["instruction"].strip()}]
         prompt = tokenizer.apply_chat_template(
@@ -215,8 +217,8 @@ def load_dpo_dataset(data_path: str | Path, tokenizer: AutoTokenizer) -> Dataset
         )
 
     if not examples:
-        raise ValueError(f"{path} does not contain any training examples")
-    DATA_LOGGER.info("Loaded %d DPO preference pairs from %s", len(examples), path)
+        raise ValueError(f"{path} does not contain any training examples with chosen+rejected")
+    DATA_LOGGER.info("Loaded %d DPO preference pairs (skipped=%d) from %s", len(examples), skipped, path)
     return Dataset.from_list(examples)
 
 

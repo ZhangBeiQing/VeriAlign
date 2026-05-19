@@ -134,11 +134,12 @@ def load_sft_dataset(data_path: str | Path, tokenizer: AutoTokenizer) -> Dataset
     with path.open("r", encoding="utf-8") as f:
         rows = json.load(f)
 
+    skipped = 0
     examples: list[dict[str, str]] = []
     for idx, row in enumerate(rows):
-        missing = {"instruction", "rejected"} - set(row)
-        if missing:
-            raise ValueError(f"{path}:{idx} missing required keys: {sorted(missing)}")
+        if not row.get("instruction") or not row.get("rejected"):
+            skipped += 1
+            continue
 
         messages = [
             {"role": "user", "content": row["instruction"].strip()},
@@ -153,7 +154,7 @@ def load_sft_dataset(data_path: str | Path, tokenizer: AutoTokenizer) -> Dataset
 
     if not examples:
         raise ValueError(f"{path} does not contain any training examples")
-    DATA_LOGGER.info("Loaded %d SFT examples from %s", len(examples), path)
+    DATA_LOGGER.info("Loaded %d SFT examples (skipped=%d) from %s", len(examples), skipped, path)
     return Dataset.from_list(examples)
 
 
