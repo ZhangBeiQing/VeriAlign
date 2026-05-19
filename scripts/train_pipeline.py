@@ -40,7 +40,7 @@ from core.training import (
     set_runtime_env,
 )
 
-DEFAULT_MODEL_PATH = "/root/autodl-tmp/Qwen3.5-4B"
+DEFAULT_MODEL_PATH = "/root/autodl-tmp/Qwen3.5-4B-ortho"
 DEFAULT_DATA_PATH = "reward_seed.json"
 DEFAULT_SFT_DIR = "/root/autodl-tmp/UniAlign-sft-lora"
 DEFAULT_DPO_DIR = "/root/autodl-tmp/UniAlign-dpo-lora"
@@ -124,6 +124,7 @@ def parse_args() -> argparse.Namespace:
     args.sft_lora_alpha = args.sft_lora_alpha if args.sft_lora_alpha is not None else sft_lora.get("alpha", 64)
     args.sft_lora_dropout = sft_lora.get("dropout", 0.05)
     args.sft_seed = args.sft_seed if args.sft_seed is not None else sft_cfg.get("seed", 42)
+    args.sft_packing = sft_cfg.get("packing", False)
 
     args.dpo_max_length = args.dpo_max_length if args.dpo_max_length is not None else dpo_cfg.get("max_length", 2048)
     args.dpo_epochs = args.dpo_epochs if args.dpo_epochs is not None else dpo_cfg.get("epochs", 3.0)
@@ -377,6 +378,7 @@ def run_sft_phase(args: argparse.Namespace, tokenizer: AutoTokenizer) -> None:
         optim="adamw_torch_fused",
         seed=args.sft_seed,
         dataset_text_field="text",
+        packing=args.sft_packing,
     )
 
     trainer = SFTTrainer(

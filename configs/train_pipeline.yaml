@@ -12,15 +12,16 @@ output:
 
 sft:
   target: chosen
-  max_length: 1024
-  epochs: 15.0
+  max_length: 8192
+  epochs: 30.0
   max_steps: -1
   learning_rate: 2.0e-5
   batch_size: 1
-  grad_accum: 8
+  grad_accum: 1
   logging_steps: 5
   save_steps: 20
   seed: 42
+  packing: true
   lora:
     r: 32
     alpha: 64
@@ -28,12 +29,12 @@ sft:
 
 dpo:
   max_length: 2048
-  epochs: 5.0
+  epochs: 15.0
   max_steps: -1
   learning_rate: 1.0e-5
-  beta: 0.3
+  beta: 0.5
   batch_size: 1
-  grad_accum: 8
+  grad_accum: 1
   logging_steps: 5
   save_steps: 20
   seed: 42
